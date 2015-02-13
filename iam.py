@@ -179,6 +179,8 @@ def delete_user(iam, name):
 
 def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd):
     changed = False
+    name_change = False
+
     current_keys, status = \
         [ck['access_key_id'] for ck in
          iam.get_all_access_keys(name).list_access_keys_result.access_key_metadata],\
@@ -188,7 +190,6 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd):
     updated_key_list = {}
 
     if new_name or new_path:
-        name_change = False
         c_path = iam.get_user(name).get_user_result.user['path']
         if (name != new_name) or (c_path != new_path):
             changed = True
@@ -245,7 +246,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd):
 
 
 def set_users_groups(iam, name, groups):
-    """ Sets groups for a user, will purge groups not explictly passed, while 
+    """ Sets groups for a user, will purge groups not explictly passed, while
         retaining pre-existing groups that also are in the new list.
     """
     changed = False
@@ -417,6 +418,8 @@ def main():
                       instance_profiles]
 
     if iam_type == 'user':
+        user_groups = None
+
         if state == 'present':
             if name not in orig_user_list:
                 (meta, changed) = create_user(
