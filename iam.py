@@ -419,28 +419,46 @@ def main():
 
     if iam_type == 'user':
         user_groups = None
+        user_exists = name in orig_user_list
 
-        if state == 'present':
-            if name not in orig_user_list:
-                (meta, changed) = create_user(
-                    iam, name, password, path, key_state)
-                keys = iam.get_all_access_keys(name).list_access_keys_result.\
-                    access_key_metadata
-                if groups:
-                    (user_groups, changed) = set_users_groups(
-                        iam, name, groups)
+        if state == 'present' and not user_exists:
+            (meta, changed) = create_user(
+                iam, name, password, path, key_state)
+            keys = iam.get_all_access_keys(name).list_access_keys_result.\
+                access_key_metadata
+            if groups:
+                (user_groups, changed) = set_users_groups(
+                    iam, name, groups)
+            module.exit_json(
+                user_meta=meta, groups=user_groups, keys=keys, changed=changed)
+        elif state in ['present', 'update'] and user_exists:
+            name_change, key_list, user_changed = update_user(
+                module, iam, name, new_name, new_path, key_state, key_ids, password)
+            if name_change:
+                orig_name = name
+                name = new_name
+            if groups:
+                user_groups, groups_changed = set_users_groups(
+                    iam, name, groups)
+                if groups_changed == user_changed:
+                    changed = groups_changed
+            else:
+                changed = True
+            if new_name and new_path:
+                module.exit_json(changed=changed, groups=user_groups, old_user_name=orig_name,
+                                 new_user_name=new_name, old_path=path, new_path=new_path, keys=key_list)
+            elif new_name and not new_path:
                 module.exit_json(
-                    user_meta=meta, groups=user_groups, keys=keys, changed=changed)
-            elif name in orig_user_list:
-                user = iam.get_user(name).get_user_result.user
-                keys = iam.get_all_access_keys(name).list_access_keys_result.\
-                    access_key_metadata
-                if groups:
-                    (user_groups, changed) = set_users_groups(
-                        iam, name, groups)
+                    changed=changed, groups=user_groups, old_user_name=orig_name, new_user_name=new_name, keys=key_list)
+            elif not new_name and new_path:
                 module.exit_json(
-                    user_meta=user, keys=keys, groups=user_groups, changed=changed)
-
+                    changed=changed, groups=user_groups, user_name=name, old_path=path, new_path=new_path, keys=key_list)
+            else:
+                module.exit_json(
+                    changed=changed, groups=user_groups, user_name=name, keys=key_list)
+        elif state == 'update' and not user_exists:
+            module.fail_json(
+                msg="The user %s does not exit. No update made." % name)
         elif state == 'absent':
             if name in orig_user_list:
                 delete_all_keys(iam, name)
@@ -452,78 +470,44 @@ def main():
                 module.exit_json(
                     changed=False, msg="User %s is already absent from your AWS IAM users" % name)
 
-        elif state == 'update':
-            if name in orig_user_list:
-                name_change, key_list, user_changed = update_user(
-                    module, iam, name, new_name, new_path, key_state, key_ids, password)
-                if name_change:
-                    orig_name = name
-                    name = new_name
-                if groups:
-                    user_groups, groups_changed = set_users_groups(
-                        iam, name, groups)
-                if groups_changed == user_changed:
-                    changed = groups_changed
-                else:
-                    changed = True
-                if new_name and new_path:
-                    module.exit_json(changed=changed, groups=user_groups, old_user_name=orig_name,
-                                     new_user_name=new_name, old_path=path, new_path=new_path, keys=key_list)
-                elif new_name and not new_path:
-                    module.exit_json(
-                        changed=changed, groups=user_groups, old_user_name=orig_name, new_user_name=new_name, keys=key_list)
-                elif not new_name and new_path:
-                    module.exit_json(
-                        changed=changed, groups=user_groups, user_name=name, old_path=path, new_path=new_path, keys=key_list)
-                else:
-                    module.exit_json(
-                        changed=changed, groups=user_groups, user_name=name, keys=key_list)
+    elif iam_type == 'group':
+        group_exists = name in orig_group_list
 
-            elif name not in orig_user_list:
-                module.fail_json(
-                    msg="The user %s does not exit. No update made." % name)
+        if state == 'present' and not group_exists:
+            new_group, changed = create_group(iam, name, path)
+            module.exit_json(changed=changed, group_name=new_group)
+        elif state in ['present', 'update'] and group_exists:
+            changed, updated_name, updated_path, cur_path = update_group(
+                iam, name, new_name, new_path)
 
-    if iam_type == 'group':
-        if state == 'present':
-            if name not in orig_group_list:
-                new_group, changed = create_group(iam, name, path)
-                module.exit_json(changed=changed, group_name=new_group)
-            else:
-                module.exit_json(changed=changed, msg="Group already exists")
+            if new_path and new_name:
+                module.exit_json(changed=changed, old_group_name=name,
+                                 new_group_name=updated_name, old_path=cur_path,
+                                 new_group_path=updated_path)
+
+            if new_path and not new_name:
+                module.exit_json(changed=changed, group_name=name,
+                                 old_path=cur_path,
+                                 new_group_path=updated_path)
+
+            if not new_path and new_name:
+                module.exit_json(changed=changed, old_group_name=name,
+                                 new_group_name=updated_name, group_path=cur_path)
+
+            if not new_path and not new_name:
+                module.exit_json(
+                    changed=changed, group_name=name, group_path=cur_path)
+        elif state == 'update' and not group_exists:
+            module.fail_json(
+                changed=changed, msg="Update Failed. Group %s doesn't seem to exit!" % name)
         elif state == 'absent':
             if name in orig_group_list:
                 removed_group, changed = delete_group(iam, name)
                 module.exit_json(changed=changed, delete_group=removed_group)
             else:
                 module.exit_json(changed=changed, msg="Group already absent")
-        elif state == 'update':
-            if name in orig_group_list:
-                changed, updated_name, updated_path, cur_path = update_group(
-                    iam, name, new_name, new_path)
 
-                if new_path and new_name:
-                    module.exit_json(changed=changed, old_group_name=name,
-                                     new_group_name=updated_name, old_path=cur_path,
-                                     new_group_path=updated_path)
-
-                if new_path and not new_name:
-                    module.exit_json(changed=changed, group_name=name,
-                                     old_path=cur_path,
-                                     new_group_path=updated_path)
-
-                if not new_path and new_name:
-                    module.exit_json(changed=changed, old_group_name=name,
-                                     new_group_name=updated_name, group_path=cur_path)
-
-                if not new_path and not new_name:
-                    module.exit_json(
-                        changed=changed, group_name=name, group_path=cur_path)
-
-            else:
-                module.fail_json(
-                    changed=changed, msg="Update Failed. Group %s doesn't seem to exit!" % name)
-
-    if iam_type == 'role':
+    elif iam_type == 'role':
         role_list = []
         if state == 'present':
             changed, role_list = create_role(
