@@ -160,7 +160,7 @@ def create_user(iam, name, pwd, path, key_state):
     changed = True
     if pwd is not None:
         pwd = iam.create_login_profile(name, pwd)
-    if key_state == 'create' or key_state == 'active':
+    if key_state in ['create', 'active']:
         keys = iam.create_access_key(
             user_name=name).create_access_key_response.\
             create_access_key_result.\
@@ -207,6 +207,12 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd):
         except boto.exception.BotoServerError:
             changed = True
             iam.create_login_profile(name, pwd)
+    else:
+        try:
+            iam.delete_login_profile(name)
+            changed = True
+        except boto.exception.BotoServerError:
+            changed = False
 
     if key_state == 'Create':
         try:
@@ -220,7 +226,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd):
         for access_key in keys:
             if access_key in current_keys:
                 for current_key, current_key_state in zip(current_keys, status):
-                    if key_state != current_key_state:
+                    if key_state != current_key_state.lower():
                         changed = True
                         iam.update_access_key(
                             access_key, key_state, user_name=name)
@@ -442,8 +448,8 @@ def main():
                     iam, name, groups)
                 if groups_changed == user_changed:
                     changed = groups_changed
-            else:
-                changed = True
+                else:
+                    changed = True
             if new_name and new_path:
                 module.exit_json(changed=changed, groups=user_groups, old_user_name=orig_name,
                                  new_user_name=new_name, old_path=path, new_path=new_path, keys=key_list)
