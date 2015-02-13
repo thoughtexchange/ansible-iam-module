@@ -59,7 +59,7 @@ options:
       - when type is user: creates, removes, deactivates or activates a user's access key(s). Note that actions apply only to keys specified.
     required: "false"
     default: null
-    choices: ["create", "remove", "Active", "Inactive"]
+    choices: [ "create", "remove", "active", "inactive"]
     aliases: []
   access_key_ids:
     description:
@@ -348,7 +348,7 @@ def main():
             default=None, required=True, choices=['present', 'absent', 'update']),
         password=dict(default=None, required=False),
         access_key_state=dict(default=None, required=False, choices=[
-            'Active', 'Inactive', 'create', 'remove']),
+            'active', 'inactive', 'create', 'remove']),
         access_key_ids=dict(type='list', default=None, required=False),
         name=dict(default=None, required=False),
         new_name=dict(default=None, required=False),
@@ -362,15 +362,15 @@ def main():
         mutually_exclusive=[],
     )
 
-    state = module.params.get('state')
-    iam_type = module.params.get('iam_type')
+    state = module.params.get('state').lower()
+    iam_type = module.params.get('iam_type').lower()
     groups = module.params.get('groups')
     name = module.params.get('name')
     new_name = module.params.get('new_name')
     password = module.params.get('password')
     path = module.params.get('path')
     new_path = module.params.get('new_path')
-    key_state = module.params.get('access_key_state')
+    key_state = module.params.get('access_key_state').lower()
     key_ids = module.params.get('access_key_ids')
 
     if iam_type == 'user' and module.params.get('password') is not None:
@@ -455,7 +455,7 @@ def main():
         elif state == 'update':
             if name in orig_user_list:
                 name_change, key_list, user_changed = update_user(
-                    module, iam, name, new_name, new_path, key_state.capitalize(), key_ids, password)
+                    module, iam, name, new_name, new_path, key_state, key_ids, password)
                 if name_change:
                     orig_name = name
                     name = new_name
