@@ -175,6 +175,10 @@ def create_user(iam, name, pwd, path, key_state):
 
 
 def delete_user(iam, name):
+    current_keys = ck['access_key_id'] for ck in
+         iam.get_all_access_keys(name).list_access_keys_result.access_key_metadata]
+    for key in current_keys:
+        iam.delete_access_key(key, name)     
     del_meta = iam.delete_user(name).delete_user_response
     changed = True
     return del_meta, name, changed
@@ -470,7 +474,6 @@ def main():
                 msg="The user %s does not exit. No update made." % name)
         elif state == 'absent':
             if name in orig_user_list:
-                delete_all_keys(iam, name)
                 set_users_groups(iam, name, '')
                 del_meta, name, changed = delete_user(iam, name)
                 module.exit_json(
