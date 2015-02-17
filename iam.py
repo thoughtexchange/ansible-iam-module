@@ -30,15 +30,18 @@ options:
     choices: [ "user", "group", "role"]
     aliases: []
   name:
-    description: name of IAM resource to create or identify
+    description: 
+      - Name of IAM resource to create or identify
     required: "true"
     aliases: []
   new_name:
-    description: when state is update, will replace name with new_name on IAM resource
+    description: 
+      - When state is update, will replace name with new_name on IAM resource
     required: "false"
     aliases: []
   new_path:
-    description: when state is update, will replace the path with new_path on the IAM resource
+    description: 
+      - When state is update, will replace the path with new_path on the IAM resource
     required: "false"
     aliases: []
   state:
@@ -50,20 +53,20 @@ options:
     aliases: []
   path:
     description:
-      - when creating or updating, specify the desired path of the resource
+      - When creating or updating, specify the desired path of the resource
     required: "false"
     default: "/"
     aliases: []
   access_key_state:
     description:
-      - when type is user: creates, removes, deactivates or activates a user's access key(s). Note that actions apply only to keys specified.
+      - When type is user: creates, removes, deactivates or activates a user's access key(s). Note that actions apply only to keys specified.
     required: "false"
     default: null
     choices: [ "create", "remove", "active", "inactive"]
     aliases: []
   access_key_ids:
     description:
-      - a list of the keys that you want impacted by the access_key_state paramter.
+      - A list of the keys that you want impacted by the access_key_state paramter.
   groups:
     description:
       - A list of groups the user should belong to. When update, will gracefully the remove groups not listed.
