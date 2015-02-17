@@ -69,7 +69,7 @@ options:
       - A list of the keys that you want impacted by the access_key_state paramter.
   groups:
     description:
-      - A list of groups the user should belong to. When update, will gracefully the remove groups not listed.
+      - A list of groups the user should belong to. When update, will gracefully remove groups not listed.
     required: "false"
     default: null
     aliases: []
@@ -94,7 +94,7 @@ options:
 
 
 requirements: [ "boto" ]
-author: Jonathan I. Davila
+author: Jonathan I. Davila and Paul Seiffert
 '''
 
 EXAMPLES = '''
@@ -236,7 +236,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd):
                     if key_state != current_key_state.lower():
                         changed = True
                         iam.update_access_key(
-                            access_key, key_state, user_name=name)
+                            access_key, key_state.capitalize(), user_name=name)
 
                 if key_state == 'remove':
                     changed = True
