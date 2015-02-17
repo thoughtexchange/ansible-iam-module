@@ -64,6 +64,12 @@ options:
     default: null
     choices: [ "create", "remove", "active", "inactive"]
     aliases: []
+  key_count:
+    description:
+      - When access_key_state is create it will ensure this quantity of keys are present. Defaults to 1.
+    required: "false"
+    default: '1'
+    aliases: []
   access_key_ids:
     description:
       - A list of the keys that you want impacted by the access_key_state paramter.
@@ -157,22 +163,27 @@ def boto_exception(err):
     return error
 
 
-def create_user(module, iam, name, pwd, path, key_state):
+def create_user(module, iam, name, pwd, path, key_state, key_count):
+    key_qty = 0
+    keys = []
     try:
         user_meta = iam.create_user(
             name, path).create_user_response.create_user_result.user
         changed = True
         if pwd is not None:
             pwd = iam.create_login_profile(name, pwd)
-        if key_state in ['create', 'active']:
-            keys = iam.create_access_key(
-                user_name=name).create_access_key_response.\
-                create_access_key_result.\
-                access_key
+        if key_state in ['create']:
+            if key_count:
+                while key_count > key_qty:
+                    keys.append = iam.create_access_key(
+                        user_name=name).create_access_key_response.\
+                        create_access_key_result.\
+                        access_key
+                    key_qty += 1
         else:
             keys = None
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=False, msg=err)
+        module.fail_json(changed=False, msg=str(err))
     else:
         user_info = dict(created_user=user_meta, password=pwd, access_keys=keys)
         return (user_info, changed)
@@ -186,13 +197,13 @@ def delete_user(module, iam, name):
             iam.delete_access_key(key, name)     
         del_meta = iam.delete_user(name).delete_user_response
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=False, msg=err)
+        module.fail_json(changed=False, msg=str(err))
     else:
         changed = True
         return del_meta, name, changed
 
 
-def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, updated):
+def update_user(module, iam, name, new_name, new_path, key_state, key_count, keys, pwd, updated):
     changed = False
     name_change = False
     if updated:
@@ -203,6 +214,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
              iam.get_all_access_keys(name).list_access_keys_result.access_key_metadata],\
             [ck['status'] for ck in
                 iam.get_all_access_keys(name).list_access_keys_result.access_key_metadata]
+        key_qty = len(current_keys)
     except boto.exception.BotoServerError, err:
         error_msg = boto_exception(err)
         if 'cannot be found' in error_msg and updated:
@@ -213,7 +225,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
                 iam.get_all_access_keys(new_name).list_access_keys_result.access_key_metadata]
             name = new_name
         else: 
-            module.fail_json(changed=False, msg=err)
+            module.fail_json(changed=False, msg=str(err))
 
     updated_key_list = {}
 
@@ -221,13 +233,17 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
         c_path = iam.get_user(name).get_user_result.user['path']
         if (name != new_name) or (c_path != new_path):
             try:
-                user = iam.update_user(
-                    name, new_name, new_path).update_user_response.response_metadata
+                if not updated:
+                    user = iam.update_user(
+                        name, new_user_name=new_name, new_path=new_path).update_user_response.response_metadata
+                else:
+                    user = iam.update_user(
+                        name, new_path=new_path).update_user_response.response_metadata
                 user['updates'] = dict(
                     old_username=name, new_username=new_name, old_path=c_path, new_path=new_path)
             except boto.exception.BotoServerError, err:
                 error_msg = boto_exception(err)
-                module.fail_json(changed=False, msg=err)
+                module.fail_json(changed=False, msg=str(err))
             else:
                 if not updated: 
                     name_change = True
@@ -241,7 +257,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
                 iam.create_login_profile(name, pwd)
                 changed = True
             except boto.exception.BotoServerError, err:
-                error_msg = boto_exception(err)
+                error_msg = boto_exception(str(err))
                 if 'Password does not conform to the account password policy' in error_msg:
                     module.fail_json(changed=False, msg="Passsword doesn't conform to policy")
                 else:
@@ -255,11 +271,14 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
 
     if key_state == 'create':
         try:
-            new_key = iam.create_access_key(
-                user_name=name).create_access_key_response.create_access_key_result.access_key
-            changed = True
+            while key_count > key_qty:
+                new_key = iam.create_access_key(
+                    user_name=name).create_access_key_response.create_access_key_result.access_key
+                key_qty += 1
+                changed = True
+
         except boto.exception.BotoServerError, err:
-            module.fail_json(msg=str(err))
+            module.fail_json(changed=False, msg=str(err))
 
     if keys and key_state:
         for access_key in keys:
@@ -270,7 +289,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
                             iam.update_access_key(
                                 access_key, key_state.capitalize(), user_name=name)
                         except boto.exception.BotoServerError, err:
-                            module.fail_json(changed=False, msg=err)
+                            module.fail_json(changed=False, msg=str(err))
                         else:
                             changed = True
 
@@ -278,7 +297,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
                     try:
                         iam.delete_access_key(access_key, user_name=name)
                     except boto.exception.BotoServerError, err:
-                        module.fail_json(changed=False, msg=err)
+                        module.fail_json(changed=False, msg=str(err))
                     else: 
                         changed = True
 
@@ -293,7 +312,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, keys, pwd, upd
                 list_access_keys_result.
                 access_key_metadata]
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
 
     for fk, fks in zip(final_keys, final_key_status):
         updated_key_list.update({fk: fks})
@@ -306,7 +325,7 @@ def set_users_groups(module, iam, name, groups, updated, new_name):
         retaining pre-existing groups that also are in the new list.
     """
     changed = False
-    
+
     if updated:
         name = new_name
 
@@ -318,7 +337,7 @@ def set_users_groups(module, iam, name, groups, updated, new_name):
         new_groups = [
             ng for ng in frozenset(groups).difference(orig_users_groups)]
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
     else:
         if len(orig_users_groups) > 0:
             for new in new_groups:
@@ -347,7 +366,7 @@ def create_group(module, iam, name, path):
         iam.create_group(
             name, path).create_group_response.create_group_result.group
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
     else:
         changed = True
     return name, changed
@@ -358,7 +377,7 @@ def delete_group(module, iam, name):
     try:
         iam.delete_group(name)
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
     else:
         changed = True
     return changed, name
@@ -379,7 +398,7 @@ def update_group(module, iam, name, new_name, new_path):
                 changed = True
                 name = new_name
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
 
     return changed, name, new_path, current_group_path
 
@@ -396,7 +415,7 @@ def create_role(module, iam, name, path, role_list, prof_list):
                 iam.create_instance_profile(name, path=path)
                 iam.add_role_to_instance_profile(name, name)
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
     else:
         updated_role_list = [rl['role_name'] for rl in iam.list_roles().list_roles_response.
                              list_roles_result.roles]
@@ -420,7 +439,7 @@ def delete_role(module, iam, name, role_list, prof_list):
             if name == prof:
                 iam.delete_instance_profile(name)
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=err)
+        module.fail_json(changed=changed, msg=str(err))
     else:
         updated_role_list = [rl['role_name'] for rl in iam.list_roles().list_roles_response.
                              list_roles_result.roles]
@@ -437,8 +456,10 @@ def main():
             default=None, required=True, choices=['present', 'absent', 'update']),
         password=dict(default=None, required=False),
         access_key_state=dict(default=None, required=False, choices=[
-            'active', 'inactive', 'create', 'remove']),
+            'active', 'inactive', 'create', 'remove', 
+            'Active', 'Inactive', 'Create', 'Remove']),
         access_key_ids=dict(type='list', default=None, required=False),
+        key_count=dict(type='int', default=1, required=False),
         name=dict(default=None, required=False),
         new_name=dict(default=None, required=False),
         path=dict(default='/', required=False),
@@ -459,6 +480,7 @@ def main():
     password = module.params.get('password')
     path = module.params.get('path')
     new_path = module.params.get('new_path')
+    key_count = module.params.get('key_count')
     key_state = module.params.get('access_key_state')
     if key_state:
         key_state = key_state.lower()
@@ -478,8 +500,12 @@ def main():
                              "are being modified. Check parameters")
 
     if iam_type == 'role' and state == 'update':
-        module.fail_json(msg="iam_type: role, cannot currently be updated, "
+        module.fail_json(changed=False, msg="iam_type: role, cannot currently be updated, "
                              "please specificy present or absent")
+
+    if any([n in key_state for n in ['active', 'inactive']]) and not key_ids:
+        module.fail_json(changed=False, msg="At least one access key has to be defined in order"
+                                            " to use 'active' or 'inactive'")
 
     ec2_url, aws_access_key, aws_secret_key, region = get_ec2_creds(module)
 
@@ -509,25 +535,26 @@ def main():
                       instance_profiles]
 
     if iam_type == 'user':
+        been_updated = False
         user_groups = None
         user_exists = any([n in [name, new_name] for n in orig_user_list])
 
         if state == 'present' and not user_exists and not new_name:
             (meta, changed) = create_user(
-                module, iam, name, password, path, key_state)
+                module, iam, name, password, path, key_state, key_count)
             keys = iam.get_all_access_keys(name).list_access_keys_result.\
                 access_key_metadata
             if groups:
                 (user_groups, changed) = set_users_groups(
-                    module, iam, name, groups)
+                    module, iam, name, groups, been_updated, new_name)
             module.exit_json(
                 user_meta=meta, groups=user_groups, keys=keys, changed=changed)
+
         elif state in ['present', 'update'] and user_exists:
-            been_updated = False
             if name not in orig_user_list and new_name in orig_user_list:
                 been_updated = True
             name_change, key_list, user_changed = update_user(
-                module, iam, name, new_name, new_path, key_state, key_ids, password, been_updated)
+                module, iam, name, new_name, new_path, key_state, key_count, key_ids, password, been_updated)
             if name_change:
                 orig_name = name
                 name = new_name
