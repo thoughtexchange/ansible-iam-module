@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # This file is part of Ansible
 #
 # Ansible is free software: you can redistribute it and/or modify
@@ -100,6 +100,8 @@ options:
 
 
 requirements: [ "boto" ]
+notes:
+  - 'Currently boto does not support the removal of Managed Policies, the module will error out if your user/group/role has managed policies when you try to do state=absent. They will need to be removed manually.'
 author: Jonathan I. Davila and Paul Seiffert
 '''
 
@@ -197,7 +199,24 @@ def delete_user(module, iam, name):
             iam.delete_access_key(key, name)     
         del_meta = iam.delete_user(name).delete_user_response
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=False, msg=str(err))
+        error_msg = boto_exception(err)
+        if ('must detach all policies first') in error_msg:
+            for policy in iam.get_all_user_policies(name).list_user_policies_result.policy_names:
+                iam.delete_user_policy(name, policy)
+            try:
+                del_meta = iam.delete_user(name)
+            except boto.exception.BotoServerError, err:
+                error_msg = boto_exception(err)
+                if ('must detach all policies first') in error_msg:
+                      module.fail_json(changed=changed, msg="All inline polices have been removed. Though it appears"
+                                                            "that %s has Managed Polices. This is not "
+                                                            "currently supported by boto. Please detach the polices "
+                                                            "through the console and try again." % name)
+                else:
+                    module.fail_json(changed=changed, msg=str(err))
+            else:
+                changed = True
+                return del_meta, name, changed
     else:
         changed = True
         return del_meta, name, changed
@@ -377,7 +396,23 @@ def delete_group(module, iam, name):
     try:
         iam.delete_group(name)
     except boto.exception.BotoServerError, err:
-        module.fail_json(changed=changed, msg=str(err))
+        error_msg = boto_exception(err)
+        if ('must detach all policies first') in error_msg:
+            for policy in iam.get_all_group_policies(name).list_group_policies_result.policy_names:
+                iam.delete_group_policy(name, policy)
+            try:
+                iam.delete_group(name)
+            except boto.exception.BotoServerError, err:
+                error_msg = boto_exception(err)
+                if ('must detach all policies first') in error_msg:
+                      module.fail_json(changed=changed, msg="All inline polices have been removed. Though it appears"
+                                                            "that %s has Managed Polices. This is not "
+                                                            "currently supported by boto. Please detach the polices "
+                                                            "through the console and try again." % name)
+                else:
+                    module.fail_json(changed=changed, msg=str(err))
+            else:
+                changed = True
     else:
         changed = True
     return changed, name
@@ -432,8 +467,29 @@ def delete_role(module, iam, name, role_list, prof_list):
                             instance_profiles]
             for profile in cur_ins_prof:
                 iam.remove_role_from_instance_profile(profile, name)
-            iam.delete_role(name)
-            changed = True
+            try:
+              iam.delete_role(name)
+            except boto.exception.BotoServerError, err:
+              error_msg = boto_exception(err)
+              if ('must detach all policies first') in error_msg:
+                for policy in iam.list_role_policies(name).list_role_policies_result.policy_names:
+                  iam.delete_role_policy(name, policy)
+              try:
+                iam.delete_role(name)
+              except boto.exception.BotoServerError, err:
+                  error_msg = boto_exception(err)
+                  if ('must detach all policies first') in error_msg:
+                      module.fail_json(changed=changed, msg="All inline polices have been removed. Though it appears"
+                                                            "that %s has Managed Polices. This is not "
+                                                            "currently supported by boto. Please detach the polices "
+                                                            "through the console and try again." % name)
+                  else:
+                      module.fail_json(changed=changed, msg=str(err))
+              else:
+                changed = True
+
+            else:
+                changed = True
 
         for prof in prof_list:
             if name == prof:
@@ -638,7 +694,7 @@ def main():
                 iam, name, path, orig_role_list, orig_prof_list)
         elif state == 'absent':
             changed, role_list = delete_role(
-                iam, name, orig_role_list, orig_prof_list)
+                module, iam, name, orig_role_list, orig_prof_list)
         elif state == 'update':
             module.fail_json(
                 changed=False, msg='Role update not currently supported by boto.')
