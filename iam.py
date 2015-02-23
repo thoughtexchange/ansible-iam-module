@@ -25,49 +25,49 @@ options:
   iam_type:
     description:
       - Type of IAM resource
-    required: "true"
+    required: true
     default: null
     choices: [ "user", "group", "role"]
     aliases: []
   name:
-    description: 
+    description:
       - Name of IAM resource to create or identify
-    required: "true"
+    required: true
     aliases: []
   new_name:
-    description: 
+    description:
       - When state is update, will replace name with new_name on IAM resource
-    required: "false"
+    required: false
     aliases: []
   new_path:
-    description: 
+    description:
       - When state is update, will replace the path with new_path on the IAM resource
-    required: "false"
+    required: false
     aliases: []
   state:
     description:
       - Whether to create, delete or update the IAM resource. Note, roles cannot be updated.
-    required: "true"
+    required: true
     default: null
     choices: [ "present", "absent", "update" ]
     aliases: []
   path:
     description:
       - When creating or updating, specify the desired path of the resource
-    required: "false"
+    required: false
     default: "/"
     aliases: []
   access_key_state:
     description:
-      - When type is user: creates, removes, deactivates or activates a user's access key(s). Note that actions apply only to keys specified.
-    required: "false"
+      - When type is user, it creates, removes, deactivates or activates a user's access key(s). Note that actions apply only to keys specified.
+    required: false
     default: null
     choices: [ "create", "remove", "active", "inactive"]
     aliases: []
   key_count:
     description:
       - When access_key_state is create it will ensure this quantity of keys are present. Defaults to 1.
-    required: "false"
+    required: false
     default: '1'
     aliases: []
   access_key_ids:
@@ -76,25 +76,25 @@ options:
   groups:
     description:
       - A list of groups the user should belong to. When update, will gracefully remove groups not listed.
-    required: "false"
+    required: false
     default: null
     aliases: []
   password:
     description:
-      - When type is user and state is present, define the users login password. Also works with update. Note: always returns changed.
-    required: "false"
+      - When type is user and state is present, define the users login password. Also works with update. Note that always returns changed.
+    required: false
     default: null
     aliases: []
   aws_secret_key:
     description:
       - AWS secret key. If not set then the value of the AWS_SECRET_KEY environment variable is used.
-    required: "false"
+    required: false
     default: null
     aliases: [ 'ec2_secret_key', 'secret_key' ]
   aws_access_key:
     description:
       - AWS access key. If not set then the value of the AWS_ACCESS_KEY environment variable is used.
-    required: "false"
+    required: false
     default: null
     aliases: [ 'ec2_access_key', 'access_key' ]
 
@@ -109,9 +109,9 @@ tasks:
 - name: Create two new IAM users with API keys
   iam:
     iam_type: user
-    name: {{ item }}
+    name: "{{ item }}"
     state: present
-    password: {{ temp_pass }}
+    password: "{{ temp_pass }}"
     access_key_state: create
   with_items:
     - jcleese
@@ -123,7 +123,7 @@ task:
 - name: Create Two Groups, Mario and Luigi
   iam:
     iam_type: group
-    name: {{ item }}
+    name: "{{ item }}"
     state: present
   with_items:
      - Mario
@@ -135,7 +135,7 @@ task:
     iam_type: user
     name: jdavila
     state: update
-    group: {{ item.created_group.group_name }}
+    group: "{{ item.created_group.group_name }}"
   with_items: new_groups.results
 
 '''
@@ -484,6 +484,9 @@ def main():
     key_state = module.params.get('access_key_state')
     if key_state:
         key_state = key_state.lower()
+        if any([n in key_state for n in ['active', 'inactive']]) and not key_ids:
+            module.fail_json(changed=False, msg="At least one access key has to be defined in order"
+                                                " to use 'active' or 'inactive'")
     key_ids = module.params.get('access_key_ids')
 
     if iam_type == 'user' and module.params.get('password') is not None:
@@ -502,10 +505,6 @@ def main():
     if iam_type == 'role' and state == 'update':
         module.fail_json(changed=False, msg="iam_type: role, cannot currently be updated, "
                              "please specificy present or absent")
-
-    if any([n in key_state for n in ['active', 'inactive']]) and not key_ids:
-        module.fail_json(changed=False, msg="At least one access key has to be defined in order"
-                                            " to use 'active' or 'inactive'")
 
     ec2_url, aws_access_key, aws_secret_key, region = get_ec2_creds(module)
 
