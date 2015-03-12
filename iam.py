@@ -193,10 +193,10 @@ def create_user(module, iam, name, pwd, path, key_state, key_count):
 
 def delete_user(module, iam, name):
     try:
-        current_keys = [ck['access_key_id'] for ck in 
+        current_keys = [ck['access_key_id'] for ck in
             iam.get_all_access_keys(name).list_access_keys_result.access_key_metadata]
         for key in current_keys:
-            iam.delete_access_key(key, name)     
+            iam.delete_access_key(key, name)
         del_meta = iam.delete_user(name).delete_user_response
     except boto.exception.BotoServerError, err:
         error_msg = boto_exception(err)
@@ -243,7 +243,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, key_count, key
             [ck['status'] for ck in
                 iam.get_all_access_keys(new_name).list_access_keys_result.access_key_metadata]
             name = new_name
-        else: 
+        else:
             module.fail_json(changed=False, msg=str(err))
 
     updated_key_list = {}
@@ -264,9 +264,9 @@ def update_user(module, iam, name, new_name, new_path, key_state, key_count, key
                 error_msg = boto_exception(err)
                 module.fail_json(changed=False, msg=str(err))
             else:
-                if not updated: 
+                if not updated:
                     name_change = True
- 
+
     if pwd:
         try:
             iam.update_login_profile(name, pwd)
@@ -317,7 +317,7 @@ def update_user(module, iam, name, new_name, new_path, key_state, key_count, key
                         iam.delete_access_key(access_key, user_name=name)
                     except boto.exception.BotoServerError, err:
                         module.fail_json(changed=False, msg=str(err))
-                    else: 
+                    else:
                         changed = True
 
     try:
@@ -512,7 +512,7 @@ def main():
             default=None, required=True, choices=['present', 'absent', 'update']),
         password=dict(default=None, required=False),
         access_key_state=dict(default=None, required=False, choices=[
-            'active', 'inactive', 'create', 'remove', 
+            'active', 'inactive', 'create', 'remove',
             'Active', 'Inactive', 'Create', 'Remove']),
         access_key_ids=dict(type='list', default=None, required=False),
         key_count=dict(type='int', default=1, required=False),
@@ -691,7 +691,7 @@ def main():
         role_list = []
         if state == 'present':
             changed, role_list = create_role(
-                iam, name, path, orig_role_list, orig_prof_list)
+                module, iam, name, path, orig_role_list, orig_prof_list)
         elif state == 'absent':
             changed, role_list = delete_role(
                 module, iam, name, orig_role_list, orig_prof_list)
